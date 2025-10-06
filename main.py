@@ -5,59 +5,50 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 import os
 
-# Logging sozlamalari
+# Log sozlamalari
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# .env faylidan tokenni o'qish
+# .env faylidan token o'qish
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Excel faylini o'qish
 try:
-    df = pd.read_excel("talabalar.xlsx")
+    df = pd.read_excel("talabalar.xlsx", engine="openpyxl")
 except FileNotFoundError:
-    logger.error("talabalar.xlsx fayli topilmadi!")
+    logger.error("talabalar.xlsx topilmadi!")
     raise FileNotFoundError("talabalar.xlsx fayli loyiha papkasida bo'lishi kerak!")
+except Exception as e:
+    logger.error(f"Excel o'qish xatosi: {e}")
+    raise
 
-# Excel'dan ma'lumotlarni lug'atga aylantirish
-# Ustunlar: passport_num (str), group_name (str), group_link (str)
+# Excel'dan lug'at yaratish
 STUDENT_GROUPS = {
-    row["passport_num"]: (row["group_name"], row["group_link"])
+    str(row["passport_num"]).strip().upper(): (row["group_name"], row["group_link"])
     for _, row in df.iterrows()
 }
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ /start buyrug'i uchun handler """
-    await update.message.reply_text(
-        "Assalomu alaykum! Talaba guruhi botiga xush kelibsiz. 👋\n\n"
-        "Sizning passport raqamingizni yuboring (masalan: AA1234567).\n"
-        "Men sizning guruhingizni topib, Telegram linkini yuboraman.\n\n"
-        "Eslatma: Bu demo bot. Haqiqiy ma'lumotlar uchun admin bilan bog'laning."
-    )
+    await update.message.reply_text("Passport raqamingizni yuboring (masalan: AA1234567).")
 
 async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """ Passport raqamini qayta ishlash """
-    passport_num = update.message.text.strip().upper()  # Katta harflarga o'tkazish
-    
+    passport_num = update.message.text.strip().upper()
     if passport_num in STUDENT_GROUPS:
         group_name, group_link = STUDENT_GROUPS[passport_num]
-        message = f"✅ Topildi!\n\nGuruhingiz: {group_name}\n\nGuruhga qo'shilish: {group_link}"
+        await update.message.reply_text(f"Guruh: {group_name}\nLink: {group_link}")
     else:
-        message = "❌ Kechirasiz, bunday passport raqami topilmadi. Iltimos, to'g'ri raqamni yuboring yoki admin @admin_username bilan bog'laning."
-    
-    await update.message.reply_text(message)
+        await update.message.reply_text("Bunday passport raqami topilmadi!")
 
 def main() -> None:
-    """ Botni ishga tushirish """
     if not BOT_TOKEN:
-        logger.error("BOT_TOKEN .env faylida topilmadi!")
-        raise ValueError("Iltimos, .env faylida BOT_TOKEN ni sozlang.")
+        logger.error("BOT_TOKEN topilmadi!")
+        raise ValueError(".env faylida BOT_TOKEN sozlang.")
     
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport))
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport))
+    app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
