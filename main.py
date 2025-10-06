@@ -5,25 +5,25 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from dotenv import load_dotenv
 import os
 
-# Log sozlamalari
+# Logging setup
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# .env faylidan token o'qish
+# Load .env file
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Excel faylini o'qish
+# Read Excel file
 try:
     df = pd.read_excel("talabalar.xlsx", engine="openpyxl")
 except FileNotFoundError:
-    logger.error("talabalar.xlsx topilmadi!")
-    raise FileNotFoundError("talabalar.xlsx fayli loyiha papkasida bo'lishi kerak!")
+    logger.error("talabalar.xlsx fayli topilmadi!")
+    raise FileNotFoundError("talabalar.xlsx loyiha papkasida bo'lishi kerak!")
 except Exception as e:
-    logger.error(f"Excel o'qish xatosi: {e}")
+    logger.error(f"Excel faylini o'qishda xato: {e}")
     raise
 
-# Excel'dan lug'at yaratish
+# Create dictionary from Excel data
 STUDENT_GROUPS = {
     str(row["passport_num"]).strip().upper(): (row["group_name"], row["group_link"])
     for _, row in df.iterrows()
