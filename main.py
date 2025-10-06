@@ -1,54 +1,67 @@
-import logging
-import pandas as pd
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from dotenv import load_dotenv
+import telebot
 import os
+from dotenv import load_dotenv
+import pandas as pd
+import re
 
-# Logging setup
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Load .env file
+# .env faylidan ma'lumotlarni o'qish
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 
-# Read Excel file
-try:
-    df = pd.read_excel("talabalar.xlsx", engine="openpyxl")
-except FileNotFoundError:
-    logger.error("talabalar.xlsx fayli topilmadi!")
-    raise FileNotFoundError("talabalar.xlsx loyiha papkasida bo'lishi kerak!")
-except Exception as e:
-    logger.error(f"Excel faylini o'qishda xato: {e}")
-    raise
+# Botni ishga tushirish
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Create dictionary from Excel data
-STUDENT_GROUPS = {
-    str(row["passport_num"]).strip().upper(): (row["group_name"], row["group_link"])
-    for _, row in df.iterrows()
-}
+# Foydalanuvchi holatini saqlash
+user_states = {}
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("Passport raqamingizni yuboring (masalan: AA1234567).")
+# Pasport raqamini tekshirish uchun regex (AA1234567 yoki 14 raqamli JShShIR)
+PASSPORT_REGEX = r'^[A-Z]{2}\d{7}$|^[0-9]{14}$'
 
-async def handle_passport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    passport_num = update.message.text.strip().upper()
-    if passport_num in STUDENT_GROUPS:
-        group_name, group_link = STUDENT_GROUPS[passport_num]
-        await update.message.reply_text(f"Guruh: {group_name}\nLink: {group_link}")
+# Excel faylidan guruh ma'lumotlarini olish
+def get_group_info(passport):
+    try:
+        df = pd.read_excel('talabalar.xlsx')
+        if 'passport' in df.columns:
+            result = df[df['passport'] == passport][['group_name', 'group_link']]
+            if not result.empty:
+                return result.iloc[0]['group_name'], result.iloc[0]['group_link']
+        return None, None
+    except FileNotFoundError:
+        return None, None
+    except Exception as e:
+        print(f"Excel o'qishda xato: {e}")
+        return None, None
+
+@bot.message_handler(commands=['start'])
+def start_message(message):
+    user_id = message.from_user.id
+    user_states[user_id] = 'waiting_for_passport'
+    bot.send_message(message.chat.id,
+                     "Assalomu alaykum! Guruhga qo'shilish uchun pasport raqamingizni (AA1234567 yoki 14 raqamli JShShIR) yuboring.")
+
+@bot.message_handler(func=lambda message: True)
+def handle_message(message):
+    user_id = message.from_user.id
+    if user_id in user_states and user_states[user_id] == 'waiting_for_passport':
+        passport = message.text.strip()
+        # Pasport raqamini regex bilan tekshirish
+        if re.match(PASSPORT_REGEX, passport):
+            group_name, group_link = get_group_info(passport)
+            if group_name and group_link:
+                bot.send_message(message.chat.id,
+                                 f"Pasport raqamingiz tasdiqlandi: {passport}\n"
+                                 f"Guruh: {group_name}\n"
+                                 f"Link: {group_link}")
+            else:
+                bot.send_message(message.chat.id,
+                                "Pasport raqamingiz ro'yxatda topilmadi yoki Excel fayli bilan muammo bor. Iltimos, tekshiring.")
+            del user_states[user_id]
+        else:
+            bot.send_message(message.chat.id,
+                            "Noto'g'ri format! Iltimos, AA1234567 yoki 14 raqamli JShShIR kiriting.")
     else:
-        await update.message.reply_text("Bunday passport raqami topilmadi!")
-
-def main() -> None:
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN topilmadi!")
-        raise ValueError(".env faylida BOT_TOKEN sozlang.")
-    
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_passport))
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+        bot.send_message(message.chat.id, "Avval /start buyrug'ini yuboring.")
 
 if __name__ == '__main__':
-    main()
+    print("Bot ishga tushdi...")
+    bot.polling(none_stop=True)
